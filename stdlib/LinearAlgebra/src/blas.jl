@@ -328,24 +328,24 @@ end
 function dot(DX::Union{DenseArray{T},AbstractVector{T}}, DY::Union{DenseArray{T},AbstractVector{T}}) where T<:BlasReal
     @assert !has_offset_axes(DX, DY)
     n = length(DX)
-    if size(DX) != size(DY)
-        throw(DimensionMismatch("The first array has size $(size(DX)) which does not match the size of the second, $(size(DY)). You might want to use `dot(vec(x), vec(y))` if `length(x) == length(y)`."))
+    if axes(DX) != axes(DY)
+        throw(DimensionMismatch("The first array has axes $(axes(DX)) that do not match the axes of the second, $(axes(DY)). You might want to use `dot(vec(x), vec(y))` if `length(x) == length(y)`."))
     end
     GC.@preserve DX DY dot(n, pointer(DX), stride(DX, 1), pointer(DY), stride(DY, 1))
 end
 function dotc(DX::Union{DenseArray{T},AbstractVector{T}}, DY::Union{DenseArray{T},AbstractVector{T}}) where T<:BlasComplex
     @assert !has_offset_axes(DX, DY)
     n = length(DX)
-    if size(DX) != size(DY)
-        throw(DimensionMismatch("The first array has size $(size(DX)) which does not match the size of the second, $(size(DY)). You might want to use `dot(vec(x), vec(y))` if `length(x) == length(y)`."))
+    if axes(DX) != axes(DY)
+        throw(DimensionMismatch("The first array has axes $(axes(DX)) that do not match the axes of the second, $(axes(DY)). You might want to use `dot(vec(x), vec(y))` if `length(x) == length(y)`."))
     end
     GC.@preserve DX DY dotc(n, pointer(DX), stride(DX, 1), pointer(DY), stride(DY, 1))
 end
 function dotu(DX::Union{DenseArray{T},AbstractVector{T}}, DY::Union{DenseArray{T},AbstractVector{T}}) where T<:BlasComplex
     @assert !has_offset_axes(DX, DY)
     n = length(DX)
-    if size(DX) != size(DY)
-        throw(DimensionMismatch("The first array has size $(size(DX)) which does not match the size of the second, $(size(DY)). You might want to use `dot(vec(x), vec(y))` if `length(x) == length(y)`."))
+    if axes(DX) != axes(DY)
+        throw(DimensionMismatch("The first array has axes $(axes(DX)) that do not match the axes of the second, $(axes(DY)). You might want to use `dot(vec(x), vec(y))` if `length(x) == length(y)`."))
     end
     GC.@preserve DX DY dotu(n, pointer(DX), stride(DX, 1), pointer(DY), stride(DY, 1))
 end

@@ -1398,8 +1398,8 @@ end
 function dot(x::AbstractVector{Tx}, y::SparseVectorUnion{Ty}) where {Tx<:Number,Ty<:Number}
     @assert !has_offset_axes(x, y)
     n = length(x)
-    if size(x) != size(y)
-        throw(DimensionMismatch("The first array has size $(size(x)) which does not match the size of the second, $(size(y)). You might want to use `dot(vec(x), vec(y))` if `length(x) == length(y)`."))
+    if axes(x) != axes(y)
+        throw(DimensionMismatch("The first array has axes $(axes(x)) that do not match the axes of the second, $(axes(y)). You might want to use `dot(vec(x), vec(y))` if `length(x) == length(y)`."))
     end
     nzind = nonzeroinds(y)
     nzval = nonzeros(y)
@@ -1413,8 +1413,8 @@ end
 function dot(x::SparseVectorUnion{Tx}, y::AbstractVector{Ty}) where {Tx<:Number,Ty<:Number}
     @assert !has_offset_axes(x, y)
     n = length(y)
-    if size(x) != size(y)
-        throw(DimensionMismatch("The first array has size $(size(x)) which does not match the size of the second, $(size(y)). You might want to use `dot(vec(x), vec(y))` if `length(x) == length(y)`."))
+    if axes(x) != axes(y)
+        throw(DimensionMismatch("The first array has axes $(axes(x)) that do not match the axes of the second, $(axes(y)). You might want to use `dot(vec(x), vec(y))` if `length(x) == length(y)`."))
     end
     nzind = nonzeroinds(x)
     nzval = nonzeros(x)
@@ -1449,8 +1449,8 @@ end
 function dot(x::SparseVectorUnion{<:Number}, y::SparseVectorUnion{<:Number})
     x === y && return sum(abs2, x)
     n = length(x)
-    if size(x) != size(y)
-        throw(DimensionMismatch("The first array has size $(size(x)) which does not match the size of the second, $(size(y)). You might want to use `dot(vec(x), vec(y))` if `length(x) == length(y)`."))
+    if axes(x) != axes(y)
+        throw(DimensionMismatch("The first array has axes $(axes(x)) that do not match the axes of the second, $(axes(y)). You might want to use `dot(vec(x), vec(y))` if `length(x) == length(y)`."))
     end
 
     xnzind = nonzeroinds(x)
