@@ -21,13 +21,14 @@ import .Base: log, exp, sin, cos, tan, sinh, cosh, tanh, asin,
              exp10, expm1, log1p
 
 using .Base: sign_mask, exponent_mask, exponent_one,
-            exponent_half, uinttype, significand_mask
+            exponent_half, uinttype, significand_mask,
+            significand_bits, exponent_bits
 
 using Core.Intrinsics: sqrt_llvm
 
 using .Base: IEEEFloat
 
-@noinline function throw_complex_domainerror(f, x)
+@noinline function throw_complex_domainerror(f::Symbol, x)
     throw(DomainError(x, string("$f will only return a complex result if called with a ",
                                 "complex argument. Try $f(Complex(x)).")))
 end
@@ -38,8 +39,6 @@ end
 end
 
 for T in (Float16, Float32, Float64)
-    @eval significand_bits(::Type{$T}) = $(trailing_ones(significand_mask(T)))
-    @eval exponent_bits(::Type{$T}) = $(sizeof(T)*8 - significand_bits(T) - 1)
     @eval exponent_bias(::Type{$T}) = $(Int(exponent_one(T) >> significand_bits(T)))
     # maximum float exponent
     @eval exponent_max(::Type{$T}) = $(Int(exponent_mask(T) >> significand_bits(T)) - exponent_bias(T))
@@ -98,7 +97,8 @@ macro horner(x, p...)
     for i = length(p)-1:-1:1
         ex = :(muladd(t, $ex, $(esc(p[i]))))
     end
-    Expr(:block, :(t = $(esc(x))), ex)
+    ex = quote local r = $ex end # structure this to add exactly one line number node for the macro
+    return Expr(:block, :(local t = $(esc(x))), ex, :r)
 end
 
 # Evaluate p[1] + z*p[2] + z^2*p[3] + ... + z^(n-1)*p[n].  This uses
@@ -198,17 +198,17 @@ julia> log(4,2)
 0.5
 
 julia> log(-2, 3)
-ERROR: DomainError with log:
--2.0 will only return a complex result if called with a complex argument. Try -2.0(Complex(x)).
+ERROR: DomainError with -2.0:
+log will only return a complex result if called with a complex argument. Try log(Complex(x)).
 Stacktrace:
- [1] throw_complex_domainerror(::Float64, ::Symbol) at ./math.jl:31
+ [1] throw_complex_domainerror(::Symbol, ::Float64) at ./math.jl:31
 [...]
 
 julia> log(2, -3)
-ERROR: DomainError with log:
--3.0 will only return a complex result if called with a complex argument. Try -3.0(Complex(x)).
+ERROR: DomainError with -3.0:
+log will only return a complex result if called with a complex argument. Try log(Complex(x)).
 Stacktrace:
- [1] throw_complex_domainerror(::Float64, ::Symbol) at ./math.jl:31
+ [1] throw_complex_domainerror(::Symbol, ::Float64) at ./math.jl:31
 [...]
 ```
 
@@ -393,6 +393,19 @@ atanh(x::Number)
 
 Compute the natural logarithm of `x`. Throws [`DomainError`](@ref) for negative
 [`Real`](@ref) arguments. Use complex negative arguments to obtain complex results.
+
+# Examples
+```jldoctest; filter = r"Stacktrace:(\\n \\[[0-9]+\\].*)*"
+julia> log(2)
+0.6931471805599453
+
+julia> log(-3)
+ERROR: DomainError with -3.0:
+log will only return a complex result if called with a complex argument. Try log(Complex(x)).
+Stacktrace:
+ [1] throw_complex_domainerror(::Symbol, ::Float64) at ./math.jl:31
+[...]
+```
 """
 log(x::Number)
 
@@ -459,10 +472,10 @@ julia> log1p(0)
 0.0
 
 julia> log1p(-2)
-ERROR: DomainError with log1p:
--2.0 will only return a complex result if called with a complex argument. Try -2.0(Complex(x)).
+ERROR: DomainError with -2.0:
+log1p will only return a complex result if called with a complex argument. Try log1p(Complex(x)).
 Stacktrace:
- [1] throw_complex_domainerror(::Float64, ::Symbol) at ./math.jl:31
+ [1] throw_complex_domainerror(::Symbol, ::Float64) at ./math.jl:31
 [...]
 ```
 """
@@ -492,7 +505,7 @@ julia> sqrt(big(81))
 9.0
 
 julia> sqrt(big(-81))
-ERROR: DomainError with -8.1e+01:
+ERROR: DomainError with -81.0:
 NaN result for non-NaN input.
 Stacktrace:
  [1] sqrt(::BigFloat) at ./mpfr.jl:501
@@ -507,7 +520,13 @@ sqrt(x::Real) = sqrt(float(x))
 """
     hypot(x, y)
 
-Compute the hypotenuse ``\\sqrt{x^2+y^2}`` avoiding overflow and underflow.
+Compute the hypotenuse ``\\sqrt{|x|^2+|y|^2}`` avoiding overflow and underflow.
+
+This code is an implementation of the algorithm described in:
+An Improved Algorithm for `hypot(a,b)`
+by Carlos F. Borges
+The article is available online at ArXiv at the link
+  https://arxiv.org/abs/1904.09481
 
 # Examples
 ```jldoctest; filter = r"Stacktrace:(\\n \\[[0-9]+\\].*)*"
@@ -521,9 +540,61 @@ ERROR: DomainError with -2.914184810805068e18:
 sqrt will only return a complex result if called with a complex argument. Try sqrt(Complex(x)).
 Stacktrace:
 [...]
+
+julia> hypot(3, 4im)
+5.0
 ```
 """
 hypot(x::Number, y::Number) = hypot(promote(x, y)...)
+hypot(x::Complex, y::Complex) = hypot(promote(abs(x),abs(y))...)
+hypot(x::Integer, y::Integer) = hypot(promote(float(x), float(y))...)
+function hypot(x::T,y::T) where T<:AbstractFloat
+    #Return Inf if either or both imputs is Inf (Compliance with IEEE754)
+    if isinf(x) || isinf(y)
+        return convert(T,Inf)
+    end
+
+    # Order the operands
+    ax,ay = abs(x), abs(y)
+    if ay > ax
+        ax,ay = ay,ax
+    end
+
+    # Widely varying operands
+    if ay <= ax*sqrt(eps(T)/2)  #Note: This also gets ay == 0
+        return ax
+    end
+
+    # Operands do not vary widely
+    scale = eps(sqrt(floatmin(T)))  #Rescaling constant
+    if ax > sqrt(floatmax(T)/2)
+        ax = ax*scale
+        ay = ay*scale
+        scale = inv(scale)
+    elseif ay < sqrt(floatmin(T))
+        ax = ax/scale
+        ay = ay/scale
+    else
+        scale = one(scale)
+    end
+    h = sqrt(muladd(ax,ax,ay*ay))
+    # This branch is correctly rounded but requires a native hardware fma.
+    if Base.Math.FMA_NATIVE
+        hsquared = h*h
+        axsquared = ax*ax
+        h -= (fma(-ay,ay,hsquared-axsquared) + fma(h,h,-hsquared) - fma(ax,ax,-axsquared))/(2*h)
+    # This branch is within one ulp of correctly rounded.
+    else
+        if h <= 2*ay
+            delta = h-ay
+            h -= muladd(delta,delta-2*(ax-ay),ax*(2*delta - ax))/(2*h)
+        else
+            delta = h-ax
+            h -= muladd(delta,delta,muladd(ay,(4*delta-ay),2*delta*(ax-2*ay)))/(2*h)
+        end
+    end
+    h*scale
+end
 function hypot(x::T, y::T) where T<:Number
     ax = abs(x)
     ay = abs(y)
@@ -552,7 +623,16 @@ end
 """
     hypot(x...)
 
-Compute the hypotenuse ``\\sqrt{\\sum x_i^2}`` avoiding overflow and underflow.
+Compute the hypotenuse ``\\sqrt{\\sum |x_i|^2}`` avoiding overflow and underflow.
+
+# Examples
+```jldoctest
+julia> hypot(-5.7)
+5.7
+
+julia> hypot(3, 4im, 12.0)
+13.0
+```
 """
 hypot(x::Number...) = sqrt(sum(abs2(y) for y in x))
 
@@ -709,18 +789,18 @@ according to the rounding mode `r`. In other words, the quantity
 without any intermediate rounding.
 
 - if `r == RoundNearest`, then the result is exact, and in the interval
-  ``[-|y|/2, |y|/2]``.
+  ``[-|y|/2, |y|/2]``. See also [`RoundNearest`](@ref).
 
 - if `r == RoundToZero` (default), then the result is exact, and in the interval
-  ``[0, |y|)`` if `x` is positive, or ``(-|y|, 0]`` otherwise.
+  ``[0, |y|)`` if `x` is positive, or ``(-|y|, 0]`` otherwise. See also [`RoundToZero`](@ref).
 
 - if `r == RoundDown`, then the result is in the interval ``[0, y)`` if `y` is positive, or
   ``(y, 0]`` otherwise. The result may not be exact if `x` and `y` have different signs, and
-  `abs(x) < abs(y)`.
+  `abs(x) < abs(y)`. See also[`RoundDown`](@ref).
 
 - if `r == RoundUp`, then the result is in the interval `(-y,0]` if `y` is positive, or
   `[0,-y)` otherwise. The result may not be exact if `x` and `y` have the same sign, and
-  `abs(x) < abs(y)`.
+  `abs(x) < abs(y)`. See also [`RoundUp`](@ref).
 
 """
 rem(x, y, ::RoundingMode{:ToZero}) = rem(x,y)
@@ -820,14 +900,15 @@ without any intermediate rounding. This internally uses a high precision approxi
 2π, and so will give a more accurate result than `rem(x,2π,r)`
 
 - if `r == RoundNearest`, then the result is in the interval ``[-π, π]``. This will generally
-  be the most accurate result.
+  be the most accurate result. See also [`RoundNearest`](@ref).
 
 - if `r == RoundToZero`, then the result is in the interval ``[0, 2π]`` if `x` is positive,.
-  or ``[-2π, 0]`` otherwise.
+  or ``[-2π, 0]`` otherwise. See also [`RoundToZero`](@ref).
 
 - if `r == RoundDown`, then the result is in the interval ``[0, 2π]``.
-
+  See also [`RoundDown`](@ref).
 - if `r == RoundUp`, then the result is in the interval ``[-2π, 0]``.
+  See also [`RoundUp`](@ref).
 
 # Examples
 ```jldoctest
@@ -1043,6 +1124,7 @@ Return positive part of the high word of `x` as a `UInt32`.
 include("special/cbrt.jl")
 include("special/exp.jl")
 include("special/exp10.jl")
+include("special/ldexp_exp.jl")
 include("special/hyperbolic.jl")
 include("special/trig.jl")
 include("special/rem_pio2.jl")
@@ -1055,5 +1137,6 @@ for f in (:(acos), :(acosh), :(asin), :(asinh), :(atan), :(atanh),
           :(log2), :(exponent), :(sqrt))
     @eval $(f)(::Missing) = missing
 end
+clamp(::Missing, lo, hi) = missing
 
 end # module

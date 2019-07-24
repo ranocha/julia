@@ -1,12 +1,36 @@
-# Julia 1.0 Documentation
+```@eval
+io = IOBuffer()
+release = isempty(VERSION.prerelease)
+v = "$(VERSION.major).$(VERSION.minor)"
+!release && (v = v*"-$(first(VERSION.prerelease))")
+print(io, """
+    # Julia $(v) Documentation
 
-Welcome to the documentation for Julia 1.0.
+    Welcome to the documentation for Julia $(v).
 
-Please read the [release blog post](https://julialang.org/blog/2018/08/one-point-zero) for a general overview of the language and
-many of the changes since Julia v0.6. Note that version 0.7 was released alongside
-1.0 to provide an upgrade path for packages and code that predates the 1.0 release.
-The only difference between 0.7 and 1.0 is the removal of deprecation warnings.
-For a complete list of all the changes since 0.6, see the [release notes for version 0.7](https://docs.julialang.org/en/v0.7.0/NEWS/)
+    """)
+if !release
+    print(io,"""
+        !!! warning "Work in progress!"
+            This documentation is for an unreleased, in-development, version of Julia.
+        """)
+end
+import Markdown
+Markdown.parse(String(take!(io)))
+```
+Please read the [release notes](NEWS.md) to see what has changed since the last release.
+
+```@eval
+release = isempty(VERSION.prerelease)
+file = release ? "julia-$(VERSION).pdf" :
+       "julia-$(VERSION.major).$(VERSION.minor).$(VERSION.patch)-$(first(VERSION.prerelease)).pdf"
+url = "https://raw.githubusercontent.com/JuliaLang/docs.julialang.org/assets/$(file)"
+import Markdown
+Markdown.parse("""
+!!! note
+    The documentation is also available in PDF format: [$file]($url).
+""")
+```
 
 ### [Introduction](@id man-introduction)
 

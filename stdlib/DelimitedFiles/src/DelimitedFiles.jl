@@ -226,7 +226,7 @@ readdlm(input, dlm::AbstractChar, T::Type, eol::AbstractChar; opts...) =
     readdlm_auto(input, dlm, T, eol, false; opts...)
 
 readdlm_auto(input::Vector{UInt8}, dlm::AbstractChar, T::Type, eol::AbstractChar, auto::Bool; opts...) =
-    readdlm_string(String(input), dlm, T, eol, auto, val_opts(opts))
+    readdlm_string(String(copyto!(Base.StringVector(length(input)), input)), dlm, T, eol, auto, val_opts(opts))
 readdlm_auto(input::IO, dlm::AbstractChar, T::Type, eol::AbstractChar, auto::Bool; opts...) =
     readdlm_string(read(input, String), dlm, T, eol, auto, val_opts(opts))
 function readdlm_auto(input::AbstractString, dlm::AbstractChar, T::Type, eol::AbstractChar, auto::Bool; opts...)
@@ -458,7 +458,7 @@ function readdlm_string(sbuff::String, dlm::AbstractChar, T::Type, eol::Abstract
             if isa(ex, TypeError) && (ex.func == :store_cell)
                 T = ex.expected
             else
-                rethrow(ex)
+                rethrow()
             end
             offset_handler = (dims === nothing) ? DLMOffsets(sbuff) : DLMStore(T, dims, has_header, sbuff, auto, eol)
         end
@@ -713,7 +713,7 @@ function dlm_parse(dbuff::String, eol::D, dlm::D, qchar::D, cchar::D,
         end
     catch ex
         if isa(ex, TypeError) && (ex.func == :store_cell)
-            rethrow(ex)
+            rethrow()
         else
             error("at row $(nrows+1), column $col : $ex)")
         end

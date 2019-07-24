@@ -544,7 +544,7 @@ struct Struct16I
     c::Float64
 end
 
-function test_struct16(::Type{Struct}) where {Struct}
+function test_struct16(::Type{Struct}, quoteplz = false) where {Struct}
     a = Struct(0.1604656f0, 0.6297606f0, 0.83588994f0,
                0.6460273620993535, 0.9472692581106656, 0.47328535437352093)
     b = Float32(42)
@@ -552,7 +552,11 @@ function test_struct16(::Type{Struct}) where {Struct}
     if Struct === Struct16
         x = ccall((:test_16, libccalltest), Struct16, (Struct16, Float32), a, b)
     else
-        x = ccall((:test_16, libccalltest), Struct16I, (Struct16I, Float32), a, b)
+        if quoteplz
+          x = eval(:(ccall((:test_16, libccalltest), Struct16I, (Struct16I, Float32), $(QuoteNode(a)), Float32(42))))
+        else
+          x = ccall((:test_16, libccalltest), Struct16I, (Struct16I, Float32), a, b)
+        end
     end
 
     @test x.x ≈ a.x + b*1
@@ -562,8 +566,10 @@ function test_struct16(::Type{Struct}) where {Struct}
     @test x.b ≈ a.b + b*5
     @test x.c ≈ a.c - b*6
 end
-test_struct16(Struct16)
-test_struct16(Struct16I)
+
+test_struct16(Struct16, false)
+test_struct16(Struct16I, false)
+test_struct16(Struct16I, true)
 
 mutable struct Struct17
     a::Int8
@@ -1471,3 +1477,16 @@ test27477() = ccall((:ctest, Pkg27477.libccalltest), Complex{Int}, (Complex{Int}
 end
 
 @test Test27477.test27477() == 2 + 0im
+
+# issue #31073
+let
+    a = ['0']
+    arr = Vector{Char}(undef, 2)
+    ptr = pointer(arr)
+    elsz = sizeof(Char)
+    na = length(a)
+    nba = na * elsz
+    ptr = eval(:(ccall(:memcpy, Ptr{Cvoid}, (Ptr{Cvoid}, Ptr{Cvoid}, UInt), $(arr), $(a), $(nba))))
+    @test isa(ptr, Ptr{Cvoid})
+    @test arr[1] == '0'
+end
